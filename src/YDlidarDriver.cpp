@@ -69,6 +69,8 @@ YDlidarDriver::YDlidarDriver(uint8_t type)
   m_HasDeviceInfo = EPT_None;
   m_heartbeat_ts = getms();
   m_BlockRevSize = 0;
+  m_diagLoggedProtocolStamp = false;
+  m_diagLoggedHostFallback = false;
 }
 
 YDlidarDriver::~YDlidarDriver()
@@ -615,6 +617,12 @@ result_t YDlidarDriver::parseData(uint32_t timeout)
             stamp_package sp;
             memcpy(&sp, &m_data[lastPos], STAMPPACKSIZE);
             stamp = uint64_t(sp.stamp) * 1000000; // 毫秒转纳秒需要×1000000
+            if (!m_diagLoggedProtocolStamp)
+            {
+              info("[YDLIDAR][diag] timestamp source=protocol stamp_ms=%u stamp_ns=%llu",
+                sp.stamp, (unsigned long long)stamp);
+              m_diagLoggedProtocolStamp = true;
+            }
             // debug("stamp: 0x%"PRIx64" -> 0x%"PRIx64"", sp.stamp, stamp);
             // 测试扫描时长
             // static uint32_t s_scanTime = 0;
@@ -721,6 +729,11 @@ result_t YDlidarDriver::parseData(uint32_t timeout)
               //如果长时间未获取到零位包则需要清空数据
               if (getms() - m_zeroTime > TIMEOUT_2S)
                 m_datas.clear();
+            }
+            if (!stamp && !m_diagLoggedHostFallback)
+            {
+              info("[YDLIDAR][diag] timestamp source=host_fallback reason=no protocol stamp before point packet");
+              m_diagLoggedHostFallback = true;
             }
             m_datas.push_back(Pack(data, stamp));
           }
@@ -935,6 +948,9 @@ result_t YDlidarDriver::startScan(bool force, uint32_t timeout)
     return RESULT_OK;
 
   hasStamp = true;
+  stamp = 0;
+  m_diagLoggedProtocolStamp = false;
+  m_diagLoggedHostFallback = false;
   stop();
   checkTransDelay();
   delay(30);
